@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arkivum — Metadata Editor</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+:root {
+  --bg: #f4f3ef;
+  --surface: #ffffff;
+  --surface2: #eeece6;
+  --border: #d6d3cb;
+  --border-strong: #b5b2aa;
+  --text: #1a1916;
+  --text-muted: #6a6760;
+  --text-faint: #9a9790;
+  --accent: #1b3d5e;
+  --accent-light: #e7edf4;
+  --danger: #b83228;
+  --danger-light: #fcefee;
+  --warn: #895600;
+  --warn-light: #fef7ea;
+  --ok: #1a6637;
+  --ok-light: #edf7f1;
+  --info: #1a5080;
+  --info-light: #eaf0f7;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'IBM Plex Sans', sans-serif;
+  --r: 4px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
+
+header { background: var(--accent); color: #fff; padding: 13px 28px; display: flex; align-items: center; gap: 14px; }
+header h1 { font-size: 14px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+header span { font-size: 12px; opacity: .5; font-family: var(--mono); }
+header .tool-badge { margin-left: auto; font-size: 11px; background: rgba(255,255,255,.12); padding: 3px 10px; border-radius: 20px; font-family: var(--mono); }
+
+.layout { display: flex; min-height: calc(100vh - 49px); }
+
+/* Sidebar */
+.sidebar { width: 240px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+.sidebar-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); }
+.sidebar-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .1em; color: var(--text-faint); margin-bottom: 8px; }
+.sidebar-search { width: 100%; font-family: var(--sans); font-size: 12px; border: 1px solid var(--border); border-radius: var(--r); padding: 5px 8px; background: var(--bg); color: var(--text); }
+.sidebar-search:focus { outline: none; border-color: var(--accent); }
+.sidebar-list { flex: 1; overflow-y: auto; padding: 6px 0; }
+.sidebar-item { padding: 6px 16px; cursor: pointer; font-size: 12px; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); border-left: 3px solid transparent; transition: all .1s; }
+.sidebar-item:hover { background: var(--surface2); color: var(--text); }
+.sidebar-item.active { background: var(--accent-light); color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
+.sidebar-item.has-data { color: var(--text); }
+.sidebar-count { font-size: 11px; color: var(--text-faint); padding: 6px 16px; border-top: 1px solid var(--border); margin-top: auto; }
+
+/* Main */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Toolbar */
+.toolbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.toolbar-title { font-size: 13px; font-weight: 500; flex: 1; font-family: var(--mono); }
+
+/* Panels */
+.panels { flex: 1; overflow: hidden; display: flex; }
+.editor-panel { flex: 1; overflow-y: auto; padding: 20px; }
+.global-panel { width: 320px; flex-shrink: 0; border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; padding: 16px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tab { padding: 7px 16px; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-muted); transition: all .1s; user-select: none; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+
+/* Field groups */
+.field-section { margin-bottom: 20px; }
+.field-section-title { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .1em; color: var(--text-faint); margin-bottom: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+.field-row { display: flex; align-items: flex-start; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.field-row:last-child { border-bottom: none; }
+.field-name { font-family: var(--mono); font-size: 11px; color: var(--text-muted); width: 200px; flex-shrink: 0; padding-top: 6px; }
+.field-name.readonly { color: var(--text-faint); font-style: italic; }
+.field-input { flex: 1; font-family: var(--sans); font-size: 13px; border: 1px solid var(--border); border-radius: var(--r); padding: 4px 8px; background: var(--surface); color: var(--text); min-height: 30px; }
+.field-input:focus { outline: none; border-color: var(--accent); background: #fff; }
+.field-input:disabled { background: var(--surface2); color: var(--text-faint); cursor: not-allowed; }
+.field-input.filled { border-color: #a0c8b0; background: #f5fbf7; }
+.field-input.global-filled { border-color: #a0b8d0; background: #f0f4f8; }
+
+/* Add field button */
+.add-field-btn { font-size: 12px; color: var(--accent); cursor: pointer; background: none; border: 1px dashed var(--border); border-radius: var(--r); padding: 4px 10px; font-family: var(--sans); transition: all .1s; margin-top: 6px; }
+.add-field-btn:hover { border-color: var(--accent); background: var(--accent-light); }
+
+/* Field picker modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 100; display: flex; align-items: center; justify-content: center; }
+.modal { background: var(--surface); border-radius: 6px; width: 480px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+.modal-head { padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 500; font-size: 14px; display: flex; align-items: center; justify-content: space-between; }
+.modal-close { cursor: pointer; font-size: 18px; color: var(--text-muted); background: none; border: none; line-height: 1; }
+.modal-search { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.modal-search input { width: 100%; font-family: var(--sans); font-size: 13px; border: 1px solid var(--border); border-radius: var(--r); padding: 6px 10px; background: var(--bg); }
+.modal-search input:focus { outline: none; border-color: var(--accent); }
+.modal-list { overflow-y: auto; flex: 1; padding: 6px 0; }
+.modal-item { padding: 7px 16px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 10px; }
+.modal-item:hover { background: var(--surface2); }
+.modal-item.selected { background: var(--accent-light); }
+.modal-item-name { font-family: var(--mono); flex: 1; }
+.modal-item-scheme { font-size: 10px; color: var(--text-faint); background: var(--surface2); padding: 1px 6px; border-radius: 2px; }
+.modal-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Global panel */
+.global-section { margin-bottom: 16px; }
+.global-section-title { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .1em; color: var(--text-faint); margin-bottom: 8px; }
+.global-row { margin-bottom: 8px; }
+.global-label { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+.global-input { width: 100%; font-family: var(--sans); font-size: 12px; border: 1px solid var(--border); border-radius: var(--r); padding: 4px 8px; background: var(--surface); color: var(--text); }
+.global-input:focus { outline: none; border-color: var(--accent); }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--r); font-size: 13px; font-family: var(--sans); cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); transition: background .1s; }
+.btn:hover { background: var(--surface2); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { background: #0f2a42; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-danger { color: var(--danger); border-color: var(--danger); }
+.btn-danger:hover { background: var(--danger-light); }
+
+.badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 3px; font-size: 11px; font-family: var(--mono); }
+.b-ok { background: var(--ok-light); color: var(--ok); }
+.b-info { background: var(--info-light); color: var(--info); }
+.b-warn { background: var(--warn-light); color: var(--warn); }
+
+/* Empty / loading */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 13px; gap: 8px; }
+.empty-state .icon { font-size: 36px; }
+
+/* No data banner */
+.no-data-banner { background: var(--warn-light); border: 1px solid #d4a830; border-radius: var(--r); padding: 14px 18px; margin: 20px; font-size: 13px; color: var(--warn); }
+
+/* Legend */
+.legend { display: flex; gap: 14px; font-size: 11px; color: var(--text-muted); margin-bottom: 12px; flex-wrap: wrap; }
+.legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Arkivum Metadata Editor</h1>
+  <span>Edit → complete → export Arkivum CSV</span>
+  <span class="tool-badge">Tool 2 / 2</span>
+</header>
+
+<div id="no-data-banner" class="no-data-banner" style="display:none">
+  ⚠ No data received from Tool 1. Please run Tool 1 first and click "Continue to Metadata Editor".
+</div>
+
+<div class="layout" id="app" style="display:none">
+
+  <!-- Sidebar: list of matched files -->
+  <nav class="sidebar">
+    <div class="sidebar-head">
+      <div class="sidebar-label">Matched files (<span id="matched-count">0</span>)</div>
+      <input class="sidebar-search" type="text" placeholder="Search…" oninput="filterSidebar(this.value)">
+    </div>
+    <div class="sidebar-list" id="sidebar-list"></div>
+  </nav>
+
+  <div class="main">
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <span class="toolbar-title" id="toolbar-title">Select a file to edit</span>
+      <button class="btn btn-sm" onclick="prevItem()">← Prev</button>
+      <button class="btn btn-sm" onclick="nextItem()">Next →</button>
+      <button class="btn btn-sm btn-primary" onclick="showExport()">⬇ Export CSV</button>
+    </div>
+
+    <div class="panels">
+      <!-- Editor -->
+      <div class="editor-panel" id="editor-panel">
+        <div class="empty-state" id="empty-state">
+          <div class="icon">📋</div>
+          <div>Select a file from the list to edit its metadata</div>
+        </div>
+        <div id="editor-content" style="display:none">
+          <div class="legend">
+            <span><span class="legend-dot" style="background:#a0c8b0"></span>Filled (this record)</span>
+            <span><span class="legend-dot" style="background:#a0b8d0"></span>From global values</span>
+            <span><span class="legend-dot" style="background:var(--surface2)"></span>Empty</span>
+          </div>
+          <div class="tabs" id="scheme-tabs"></div>
+          <div id="scheme-content"></div>
+        </div>
+      </div>
+
+      <!-- Global values panel -->
+      <div class="global-panel">
+        <div style="font-size:12px;font-weight:500;margin-bottom:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Global values</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Applied to all records where the field is empty.</div>
+        <div id="global-fields"></div>
+        <button class="btn btn-sm btn-primary" style="margin-top:10px;width:100%" onclick="applyGlobal()">Apply to all empty fields</button>
+        <div id="global-applied" style="font-size:12px;color:var(--ok);margin-top:8px;display:none">✓ Applied</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Field picker modal -->
+<div class="modal-overlay" id="modal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-head">
+      Add field
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-search">
+      <input type="text" placeholder="Search fields…" oninput="filterModal(this.value)" id="modal-search-input">
+    </div>
+    <div class="modal-list" id="modal-list"></div>
+    <div class="modal-foot">
+      <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="addSelectedFields()">Add selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="modal-overlay" id="export-modal" style="display:none" onclick="if(event.target===this)closeExport()">
+  <div class="modal" style="width:520px">
+    <div class="modal-head">
+      Export CSV
+      <button class="modal-close" onclick="closeExport()">×</button>
+    </div>
+    <div style="padding:16px">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+        The CSV will contain:
+        <ul style="margin-top:8px;padding-left:18px;line-height:2">
+          <li><strong>1 row C</strong> — collection root (from original metadata)</li>
+          <li><strong>N rows O</strong> — one per matched file, all filled fields</li>
+          <li><strong>N rows F</strong> — one PDF per O, path <code style="font-family:var(--mono);font-size:11px">PDF_1B/{id}.pdf</code>, no isadg fields</li>
+        </ul>
+      </div>
+      <div id="export-summary" style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px;margin-bottom:16px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-sm" onclick="closeExport()">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="doExport()">⬇ Download CSV</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Schema definition ──────────────────────────────────────────────────────
+const SCHEMES = {
+  atom: {
+    label: 'Usability',
+    editable: true,
+    fields: ['qubitParentSlug','donotload']
+  },
+  dc: {
+    label: 'Dublin Core',
+    editable: true,
+    fields: ['title','creator','subject','description','publisher','contributor','date','type','format','identifier','source','language','relation','coverage','rights']
+  },
+  eSignatures: {
+    label: 'eSignatures',
+    editable: false,
+    fields: ['name','userId','meaning','dateTime']
+  },
+  isadg: {
+    label: 'ISAD(G)',
+    editable: true,
+    fields: ['identifier','accessionNumber','title','levelOfDescription','extentAndMedium','repository','archivalHistory','acquisition','scopeAndContent','appraisal','accruals','arrangement','accessConditions','reproductionConditions','language','script','languageNote','physicalCharacteristics','findingAids','locationOfOriginals','locationOfCopies','relatedUnitsOfDescription','publicationNote','digitalObjectURI','generalNote','subjectAccessPoints','placeAccessPoints','nameAccessPoints','genreAccessPoints','descriptionIdentifier','institutionIdentifier','rules','descriptionStatus','levelOfDetail','revisionHistory','languageOfDescription','scriptOfDescription','sources','archivistNote','publicationStatus','physicalObjectName','physicalObjectLocation','physicalObjectType','alternativeIdentifiers','alternativeIdentifierLabels','strEventDates','eventDates','eventTypes','strEventStartDates','eventStartDates','strEventEndDates','eventEndDates','eventActors','eventActorHistories','culture']
+  },
+  identifiers: {
+    label: 'Identifiers',
+    editable: true,
+    fields: ['identifier','identifierType']
+  }
+};
+
+// Schemes allowed on F rows (everything except isadg)
+const F_SCHEMES = ['atom','dc','eSignatures','identifiers'];
+
+// ── State ──────────────────────────────────────────────────────────────────
+let matchedItems = [];   // [{normId, metaStem, diskStem}]
+let metaRows = [];       // original CSV rows
+let metaByNormId = {};   // normId → original O row
+let rowC = null;         // the C row
+
+// editData[normId][scheme.field] = value
+let editData = {};
+
+// visibleFields[normId] = Set of 'scheme.field' shown in editor
+let visibleFields = {};
+
+// globalValues['scheme.field'] = value
+let globalValues = {};
+
+// current selected item index
+let currentIdx = -1;
+let activeScheme = 'isadg';
+let sidebarFilter = '';
+
+// Modal state
+let modalContext = null; // {normId}
+let modalSelected = new Set();
+
+// ── Init ───────────────────────────────────────────────────────────────────
+function init() {
+  const raw = sessionStorage.getItem('arkivum_tool1_data');
+  if (!raw) {
+    document.getElementById('no-data-banner').style.display = 'block';
+    return;
+  }
+  const data = JSON.parse(raw);
+  matchedItems = data.matchedIds;
+  metaRows = data.metaRows;
+
+  // Find C row
+  rowC = metaRows.find(r => r.type === 'C') || null;
+
+  // Build meta lookup by normId
+  metaRows.filter(r => r.type === 'O').forEach(r => {
+    metaByNormId[normalizeStem(r.id)] = r;
+  });
+
+  // Init editData and visibleFields for each matched item
+  matchedItems.forEach(item => {
+    editData[item.normId] = {};
+    const visible = new Set();
+    const src = metaByNormId[item.normId] || {};
+
+    // Pre-populate from source CSV
+    Object.entries(SCHEMES).forEach(([scheme, def]) => {
+      def.fields.forEach(field => {
+        const key = `${scheme}.${field}`;
+        const srcKey = key; // CSV columns are scheme.field
+        const val = src[srcKey] || '';
+        if (val) {
+          editData[item.normId][key] = val;
+          visible.add(key);
+        }
+      });
+    });
+
+    // Always show a few core isadg fields
+    ['isadg.title','isadg.identifier','isadg.levelOfDescription','isadg.repository'].forEach(k => visible.add(k));
+
+    visibleFields[item.normId] = visible;
+  });
+
+  // Build global fields panel (most common isadg fields)
+  buildGlobalPanel();
+
+  renderSidebar();
+  document.getElementById('matched-count').textContent = matchedItems.length;
+  document.getElementById('app').style.display = 'flex';
+
+  if (matchedItems.length > 0) selectItem(0);
+}
+
+function normalizeStem(stem) {
+  return stem.replace(/_vol\.[ivxlcdmIVXLCDM]+$/i, '').toLowerCase();
+}
+
+// ── Sidebar ────────────────────────────────────────────────────────────────
+function renderSidebar() {
+  const list = document.getElementById('sidebar-list');
+  const q = sidebarFilter.toLowerCase();
+  const filtered = matchedItems.filter((item, i) => {
+    const id = item.metaStem || item.normId;
+    return !q || id.toLowerCase().includes(q);
+  });
+
+  list.innerHTML = filtered.map((item, i) => {
+    const id = item.metaStem || item.normId;
+    const origIdx = matchedItems.indexOf(item);
+    const hasData = Object.values(editData[item.normId] || {}).some(v => v);
+    return `<div class="sidebar-item ${hasData ? 'has-data' : ''} ${origIdx === currentIdx ? 'active' : ''}"
+      onclick="selectItem(${origIdx})" title="${id}">${id}</div>`;
+  }).join('');
+}
+
+function filterSidebar(q) {
+  sidebarFilter = q;
+  renderSidebar();
+}
+
+// ── Select item ────────────────────────────────────────────────────────────
+function selectItem(idx) {
+  currentIdx = idx;
+  const item = matchedItems[idx];
+  if (!item) return;
+
+  document.getElementById('toolbar-title').textContent = item.metaStem || item.normId;
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('editor-content').style.display = 'block';
+
+  renderSidebar();
+  renderSchemeTabs();
+  renderSchemeContent();
+}
+
+function prevItem() { if (currentIdx > 0) selectItem(currentIdx - 1); }
+function nextItem() { if (currentIdx < matchedItems.length - 1) selectItem(currentIdx + 1); }
+
+// ── Scheme tabs ────────────────────────────────────────────────────────────
+function renderSchemeTabs() {
+  const tabs = document.getElementById('scheme-tabs');
+  tabs.innerHTML = Object.entries(SCHEMES).map(([key, def]) => `
+    <div class="tab ${activeScheme === key ? 'active' : ''}" onclick="setScheme('${key}')">${def.label}</div>
+  `).join('');
+}
+
+function setScheme(scheme) {
+  activeScheme = scheme;
+  renderSchemeTabs();
+  renderSchemeContent();
+}
+
+// ── Scheme content ─────────────────────────────────────────────────────────
+function renderSchemeContent() {
+  const item = matchedItems[currentIdx];
+  if (!item) return;
+  const normId = item.normId;
+  const def = SCHEMES[activeScheme];
+  const visible = visibleFields[normId];
+  const data = editData[normId];
+
+  // Get visible fields for this scheme
+  const schemeVisible = def.fields
+    .map(f => `${activeScheme}.${f}`)
+    .filter(k => visible.has(k));
+
+  let html = `<div class="field-section">
+    <div class="field-section-title">${def.label} <span style="font-family:var(--mono);font-size:10px">(${activeScheme})</span>
+      ${!def.editable ? '<span class="badge b-warn" style="margin-left:auto">read-only</span>' : ''}
+    </div>`;
+
+  if (schemeVisible.length === 0) {
+    html += `<div style="font-size:13px;color:var(--text-faint);padding:12px 0">No fields added yet.</div>`;
+  } else {
+    schemeVisible.forEach(key => {
+      const field = key.split('.').slice(1).join('.');
+      const val = data[key] || '';
+      const isGlobal = !val && globalValues[key];
+      const displayVal = val || globalValues[key] || '';
+      const cls = val ? 'filled' : (isGlobal ? 'global-filled' : '');
+      const disabled = !def.editable ? 'disabled' : '';
+      html += `<div class="field-row">
+        <div class="field-name ${!def.editable ? 'readonly' : ''}" title="${key}">${field}</div>
+        <input class="field-input ${cls}" type="text" value="${escHtml(displayVal)}"
+          ${disabled}
+          onchange="setField('${normId}','${key}',this.value)"
+          oninput="this.className='field-input filled'">
+      </div>`;
+    });
+  }
+
+  html += `</div>`;
+
+  if (def.editable) {
+    html += `<button class="add-field-btn" onclick="openModal('${normId}','${activeScheme}')">+ Add field</button>`;
+  }
+
+  document.getElementById('scheme-content').innerHTML = html;
+}
+
+function setField(normId, key, val) {
+  editData[normId][key] = val;
+  if (val) visibleFields[normId].add(key);
+  renderSidebar();
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Field picker modal ─────────────────────────────────────────────────────
+function openModal(normId, scheme) {
+  modalContext = { normId, scheme };
+  modalSelected = new Set();
+  document.getElementById('modal-search-input').value = '';
+  renderModalList('');
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+}
+
+function filterModal(q) { renderModalList(q); }
+
+function renderModalList(q) {
+  if (!modalContext) return;
+  const { normId, scheme } = modalContext;
+  const def = SCHEMES[scheme];
+  const visible = visibleFields[normId];
+  const qLow = q.toLowerCase();
+
+  const items = def.fields
+    .map(f => `${scheme}.${f}`)
+    .filter(k => !visible.has(k))
+    .filter(k => !q || k.toLowerCase().includes(qLow));
+
+  document.getElementById('modal-list').innerHTML = items.length === 0
+    ? '<div style="padding:16px;color:var(--text-muted);font-size:13px">All fields already added.</div>'
+    : items.map(k => {
+        const field = k.split('.').slice(1).join('.');
+        const sel = modalSelected.has(k);
+        return `<div class="modal-item ${sel ? 'selected' : ''}" onclick="toggleModalItem('${k}',this)">
+          <span class="modal-item-name">${field}</span>
+          <span class="modal-item-scheme">${scheme}</span>
+          ${sel ? '<span style="color:var(--accent)">✓</span>' : ''}
+        </div>`;
+      }).join('');
+}
+
+function toggleModalItem(key, el) {
+  if (modalSelected.has(key)) { modalSelected.delete(key); el.classList.remove('selected'); }
+  else { modalSelected.add(key); el.classList.add('selected'); }
+  renderModalList(document.getElementById('modal-search-input').value);
+}
+
+function addSelectedFields() {
+  if (!modalContext) return;
+  const { normId } = modalContext;
+  modalSelected.forEach(k => visibleFields[normId].add(k));
+  closeModal();
+  renderSchemeContent();
+}
+
+// ── Global values panel ────────────────────────────────────────────────────
+const GLOBAL_FIELDS = [
+  'isadg.accessionNumber','isadg.repository','isadg.levelOfDescription',
+  'isadg.descriptionStatus','isadg.languageOfDescription','isadg.eventTypes',
+  'isadg.culture','isadg.scopeAndContent','isadg.eventStartDates','isadg.eventEndDates',
+  'isadg.extentAndMedium','isadg.language'
+];
+
+function buildGlobalPanel() {
+  const container = document.getElementById('global-fields');
+  container.innerHTML = GLOBAL_FIELDS.map(key => {
+    const [scheme, ...rest] = key.split('.');
+    const field = rest.join('.');
+    return `<div class="global-row">
+      <div class="global-label">${field}</div>
+      <input class="global-input" type="text" placeholder="${key}"
+        id="global-${key.replace(/\./g,'-')}"
+        onchange="globalValues['${key}']=this.value">
+    </div>`;
+  }).join('');
+}
+
+function applyGlobal() {
+  // Read current global input values
+  GLOBAL_FIELDS.forEach(key => {
+    const el = document.getElementById('global-' + key.replace(/\./g,'-'));
+    if (el && el.value) globalValues[key] = el.value;
+  });
+
+  // Apply to all records where field is empty
+  matchedItems.forEach(item => {
+    Object.entries(globalValues).forEach(([key, val]) => {
+      if (!editData[item.normId][key]) {
+        editData[item.normId][key] = val;
+        visibleFields[item.normId].add(key);
+      }
+    });
+  });
+
+  const msg = document.getElementById('global-applied');
+  msg.style.display = 'block';
+  setTimeout(() => { msg.style.display = 'none'; }, 2500);
+
+  if (currentIdx >= 0) renderSchemeContent();
+  renderSidebar();
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+function prevItem() { if (currentIdx > 0) selectItem(currentIdx - 1); }
+function nextItem() { if (currentIdx < matchedItems.length - 1) selectItem(currentIdx + 1); }
+
+// ── Export ─────────────────────────────────────────────────────────────────
+function showExport() {
+  const filledCount = matchedItems.filter(item =>
+    Object.values(editData[item.normId]).some(v => v)
+  ).length;
+
+  document.getElementById('export-summary').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div>✓ <strong>${matchedItems.length}</strong> matched files</div>
+      <div>📄 <strong>${matchedItems.length}</strong> O rows + <strong>${matchedItems.length}</strong> F rows</div>
+      <div>🗂 <strong>1</strong> C row (collection)</div>
+      <div style="color:var(--text-muted);font-size:12px;margin-top:4px">Only filled fields will appear as columns in the output.</div>
+    </div>`;
+
+  document.getElementById('export-modal').style.display = 'flex';
+}
+
+function closeExport() {
+  document.getElementById('export-modal').style.display = 'none';
+}
+
+function doExport() {
+  // Collect all columns used across all records
+  const usedCols = new Set(['id','type','parent_id']);
+
+  matchedItems.forEach(item => {
+    Object.entries(editData[item.normId]).forEach(([key, val]) => {
+      if (val) usedCols.add(key);
+    });
+  });
+
+  // F rows: exclude isadg columns
+  const fCols = [...usedCols].filter(c => !c.startsWith('isadg.'));
+  const allCols = [...usedCols];
+
+  const rows = [];
+
+  // Row C
+  if (rowC) {
+    const cRow = {};
+    allCols.forEach(c => { cRow[c] = rowC[c] || ''; });
+    cRow.id = rowC.id || '';
+    cRow.type = 'C';
+    cRow.parent_id = rowC.parent_id || '';
+    rows.push(cRow);
+  }
+
+  // O + F rows
+  matchedItems.forEach(item => {
+    const stem = item.metaStem || item.normId;
+    const data = editData[item.normId];
+
+    // O row
+    const oRow = {};
+    allCols.forEach(c => { oRow[c] = data[c] || ''; });
+    oRow.id = stem;
+    oRow.type = 'O';
+    oRow.parent_id = rowC ? (rowC.id || '') : '';
+    rows.push(oRow);
+
+    // F row (no isadg)
+    const fRow = {};
+    allCols.forEach(c => { fRow[c] = fCols.includes(c) ? (data[c] || '') : ''; });
+    fRow.id = `PDF_1B/${stem}.pdf`;
+    fRow.type = 'F';
+    fRow.parent_id = stem;
+    rows.push(fRow);
+  });
+
+  const csv = Papa.unparse(rows, { columns: allCols });
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'arkivum-metadata-export.csv'; a.click();
+  URL.revokeObjectURL(url);
+  closeExport();
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
